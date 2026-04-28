@@ -6,6 +6,11 @@
 }
 
 @theme inline {
+  /* This creates your custom DayCraft color palette! */
+  --color-daycraft-navy: #021A54;
+  --color-daycraft-pink: #FF85BB;
+  --color-daycraft-lightPink: #FFCEE3;
+  --color-daycraft-offWhite: #F5F5F5;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);

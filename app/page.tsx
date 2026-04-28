@@ -1,65 +1,182 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Settings, LogOut, User } from 'lucide-react';
+import Sidebar from '@/components/Sidebar';
+import CalendarGrid from '@/components/CalendarGrid';
+import WeekView from '@/components/WeekView';
+import MonthView from '@/components/MonthView';
+import AddTaskModal from '@/components/AddTaskModal';
+import IntegrationsModal from '@/components/IntegrationsModal';
+import LoadingState from '@/components/LoadingState';
+
+export interface Task {
+  id: string;
+  title: string;
+  source: string;
+  duration: number;
+  dueDate?: string;
+  dueTime?: string;
+  flexibility?: 'Rigid' | 'High Priority' | 'Flexible';
+  description?: string;
+  completedAt?: string;
+  scheduledStart?: string;
+}
 
 export default function Home() {
+  const router = useRouter();
+  const [isAuthorized, setIsAuthorized] = useState(false);
+
+  const [currentView, setCurrentView] = useState('Day');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isCrafting, setIsCrafting] = useState(false);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+
+  // UPDATED: Catch the token AND the account type!
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenString = urlParams.get('token');
+    const accountType = urlParams.get('type') || 'primary';
+
+    if (tokenString) {
+      // Save it dynamically based on the type!
+      localStorage.setItem(`gcal_${accountType}_tokens`, tokenString);
+      window.history.replaceState({}, document.title, "/");
+      setIsAuthorized(true);
+      
+      // If it was a school account they just linked, pop the modal open to show success
+      if (accountType === 'school') {
+        setIsIntegrationsOpen(true);
+      }
+    } else if (localStorage.getItem('gcal_primary_tokens')) {
+      setIsAuthorized(true);
+    } else {
+      router.push('/login');
+    }
+  }, [router]);
+
+  if (!isAuthorized) return null;
+
+  const getFormattedDate = () => {
+    const today = new Date();
+    const weekday = today.toLocaleDateString('en-US', { weekday: 'long' });
+    const month = today.toLocaleDateString('en-US', { month: 'long' });
+    const day = today.getDate();
+    const year = today.getFullYear();
+    const getOrdinal = (n: number) => {
+      const s = ["th", "st", "nd", "rd"];
+      const v = n % 100;
+      return s[(v - 20) % 10] || s[v] || s[0];
+    };
+    return `${weekday}, ${month} ${day}${getOrdinal(day)}, ${year}`;
+  };
+
+  const handleSaveTask = (taskToSave: Task) => {
+    const cleanTask = { ...taskToSave, scheduledStart: undefined };
+    if (editingTask) setTasks(tasks.map(t => t.id === cleanTask.id ? cleanTask : t));
+    else setTasks([...tasks, cleanTask]);
+    setIsModalOpen(false);
+    setEditingTask(null);
+  };
+
+  const handleDeleteTask = (taskId: string) => setTasks(tasks.filter(t => t.id !== taskId));
+  const handleEditTask = (task: Task) => { setEditingTask(task); setIsModalOpen(true); };
+  const handleReorderTasks = (reorderedTasks: Task[]) => setTasks(reorderedTasks);
+  
+  const handleToggleComplete = (taskId: string) => {
+    setTasks(tasks.map(task => {
+      if (task.id === taskId) return { ...task, completedAt: task.completedAt ? undefined : new Date().toISOString() };
+      return task;
+    }));
+  };
+
+  const handleCraftMyDay = () => {
+    setIsCrafting(true);
+    setTimeout(() => {
+      setIsCrafting(false);
+      let currentHour = 9;
+      let currentMinute = 0;
+      const scheduledTasks = tasks.map(task => {
+        if (task.completedAt) return task;
+        const formatTime = (h: number, m: number) => `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        const scheduledStart = formatTime(currentHour, currentMinute);
+        currentMinute += task.duration + 15;
+        while (currentMinute >= 60) { currentHour += 1; currentMinute -= 60; }
+        return { ...task, scheduledStart };
+      });
+      setTasks(scheduledTasks);
+    }, 3500); 
+  };
+
+  // Logout function
+  const handleSignOut = () => {
+    localStorage.removeItem('gcal_primary_tokens');
+    localStorage.removeItem('gcal_school_tokens');
+    router.push('/login');
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="flex min-h-screen bg-slate-50 text-slate-900 overflow-hidden relative">
+      <Sidebar tasks={tasks} onOpenAddTask={() => { setEditingTask(null); setIsModalOpen(true); }} onDeleteTask={handleDeleteTask} onEditTask={handleEditTask} onReorderTasks={handleReorderTasks} onToggleComplete={handleToggleComplete} isCrafting={isCrafting} onCraft={handleCraftMyDay} />
+      <div className="flex-1 p-8 flex flex-col h-screen">
+        <header className="flex justify-between items-center mb-8 shrink-0 gap-4">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl lg:text-3xl font-black text-slate-900 truncate">{getFormattedDate()}</h1>
+            <p className="text-slate-500 font-medium truncate">Crafting your perfect schedule</p>
+          </div>
+          <div className="flex bg-slate-200/50 p-1 rounded-xl shrink-0">
+            {['Day', 'Week', 'Month'].map((viewName) => (
+              <button key={viewName} onClick={() => setCurrentView(viewName)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${ currentView === viewName ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700' }`}>
+                {viewName}
+              </button>
+            ))}
+          </div>
+          <div className="flex-1 flex justify-end relative">
+            <button onClick={() => setIsProfileOpen(!isProfileOpen)} className={`h-12 w-12 border rounded-2xl shadow-sm flex items-center justify-center font-bold transition-all ${isProfileOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-indigo-600 hover:border-indigo-200'}`}>
+              JD
+            </button>
+            {isProfileOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsProfileOpen(false)} />
+                <div className="absolute right-0 top-14 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-50">
+                  <div className="px-4 py-3 border-b border-slate-100 mb-1">
+                    <p className="text-sm font-bold text-slate-800">John Doe</p>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">john@student.edu</p>
+                  </div>
+                  <div className="px-2 space-y-1">
+                    <button className="w-full text-left px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-xl flex items-center gap-2 transition-colors">
+                      <User className="w-4 h-4" /> Account Settings
+                    </button>
+                    <button onClick={() => { setIsProfileOpen(false); setIsIntegrationsOpen(true); }} className="w-full text-left px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-xl flex items-center gap-2 transition-colors">
+                      <Settings className="w-4 h-4" /> Integrations
+                    </button>
+                  </div>
+                  <div className="px-2 mt-1 pt-1 border-t border-slate-100">
+                    <button onClick={handleSignOut} className="w-full text-left px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-2 transition-colors">
+                      <LogOut className="w-4 h-4" /> Sign Out
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </header>
+        <div className="flex-1 overflow-hidden relative">
+          {isCrafting ? <LoadingState /> : (
+            <>
+              {currentView === 'Day' && <CalendarGrid tasks={tasks} />}
+              {currentView === 'Week' && <WeekView tasks={tasks} />}
+              {currentView === 'Month' && <MonthView tasks={tasks} />}
+            </>
+          )}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </div>
+      <AddTaskModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingTask(null); }} onSave={handleSaveTask} editingTask={editingTask} />
+      <IntegrationsModal isOpen={isIntegrationsOpen} onClose={() => setIsIntegrationsOpen(false)} />
+    </main>
   );
 }
