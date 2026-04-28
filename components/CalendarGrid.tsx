@@ -6,10 +6,10 @@ import { Clock, CalendarDays, AlignLeft, X, CheckSquare } from 'lucide-react';
 
 interface CalendarGridProps {
   tasks: Task[];
+  currentDate: Date;
 }
 
-export default function CalendarGrid({ tasks }: CalendarGridProps) {
-  // NEW: State to track which task card is currently clicked open
+export default function CalendarGrid({ tasks, currentDate }: CalendarGridProps) {  // NEW: State to track which task card is currently clicked open
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
 
   const hours = Array.from({ length: 24 }, (_, i) => i);

@@ -5,9 +5,10 @@ import { Task } from '../app/page';
 
 interface WeekViewProps {
   tasks: Task[];
+  currentDate: Date;
 }
 
-export default function WeekView({ tasks }: WeekViewProps) {
+export default function WeekView({ tasks, currentDate }: WeekViewProps) {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
 
   const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, LogOut, User } from 'lucide-react';
+import { Settings, LogOut, User, ChevronLeft, ChevronRight } from 'lucide-react';
 import Sidebar from '@/components/Sidebar';
 import CalendarGrid from '@/components/CalendarGrid';
 import WeekView from '@/components/WeekView';
@@ -28,6 +28,9 @@ export default function Home() {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
 
+  // 1. THIS CONTROLS THE DATE WE ARE LOOKING AT
+  const [currentDate, setCurrentDate] = useState(new Date());
+  
   const [currentView, setCurrentView] = useState('Day');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
@@ -36,22 +39,16 @@ export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // UPDATED: Catch the token AND the account type!
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const tokenString = urlParams.get('token');
     const accountType = urlParams.get('type') || 'primary';
 
     if (tokenString) {
-      // Save it dynamically based on the type!
       localStorage.setItem(`gcal_${accountType}_tokens`, tokenString);
       window.history.replaceState({}, document.title, "/");
       setIsAuthorized(true);
-      
-      // If it was a school account they just linked, pop the modal open to show success
-      if (accountType === 'school') {
-        setIsIntegrationsOpen(true);
-      }
+      if (accountType === 'school') setIsIntegrationsOpen(true);
     } else if (localStorage.getItem('gcal_primary_tokens')) {
       setIsAuthorized(true);
     } else {
@@ -61,19 +58,66 @@ export default function Home() {
 
   if (!isAuthorized) return null;
 
-  const getFormattedDate = () => {
-    const today = new Date();
-    const weekday = today.toLocaleDateString('en-US', { weekday: 'long' });
-    const month = today.toLocaleDateString('en-US', { month: 'long' });
-    const day = today.getDate();
-    const year = today.getFullYear();
-    const getOrdinal = (n: number) => {
-      const s = ["th", "st", "nd", "rd"];
-      const v = n % 100;
-      return s[(v - 20) % 10] || s[v] || s[0];
-    };
-    return `${weekday}, ${month} ${day}${getOrdinal(day)}, ${year}`;
+  // 2. THIS MAKES THE TEXT AT THE TOP CHANGE DYNAMICALLY
+  const getFormattedHeader = () => {
+    if (currentView === 'Day') {
+      const weekday = currentDate.toLocaleDateString('en-US', { weekday: 'long' });
+      const month = currentDate.toLocaleDateString('en-US', { month: 'long' });
+      const day = currentDate.getDate();
+      const year = currentDate.getFullYear();
+      const getOrdinal = (n: number) => {
+        const s = ["th", "st", "nd", "rd"];
+        const v = n % 100;
+        return s[(v - 20) % 10] || s[v] || s[0];
+      };
+      return `${weekday}, ${month} ${day}${getOrdinal(day)}, ${year}`;
+    } 
+    
+    if (currentView === 'Week') {
+      const dayOfWeek = currentDate.getDay(); 
+      const distanceToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const monday = new Date(currentDate);
+      monday.setDate(currentDate.getDate() + distanceToMonday);
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+
+      const monthStart = monday.toLocaleDateString('en-US', { month: 'short' });
+      const monthEnd = sunday.toLocaleDateString('en-US', { month: 'short' });
+      const yearStart = monday.getFullYear();
+      const yearEnd = sunday.getFullYear();
+
+      if (monthStart === monthEnd) {
+        return `${monthStart} ${monday.getDate()} - ${sunday.getDate()}, ${yearStart}`;
+      } else if (yearStart === yearEnd) {
+        return `${monthStart} ${monday.getDate()} - ${monthEnd} ${sunday.getDate()}, ${yearStart}`;
+      } else {
+        return `${monthStart} ${monday.getDate()}, ${yearStart} - ${monthEnd} ${sunday.getDate()}, ${yearEnd}`;
+      }
+    } 
+    
+    if (currentView === 'Month') {
+      return currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    }
   };
+
+  // 3. THESE ARE THE FUNCTIONS FOR THE ARROWS
+  const handlePrevious = () => {
+    const newDate = new Date(currentDate);
+    if (currentView === 'Day') newDate.setDate(newDate.getDate() - 1);
+    if (currentView === 'Week') newDate.setDate(newDate.getDate() - 7);
+    if (currentView === 'Month') newDate.setMonth(newDate.getMonth() - 1);
+    setCurrentDate(newDate);
+  };
+
+  const handleNext = () => {
+    const newDate = new Date(currentDate);
+    if (currentView === 'Day') newDate.setDate(newDate.getDate() + 1);
+    if (currentView === 'Week') newDate.setDate(newDate.getDate() + 7);
+    if (currentView === 'Month') newDate.setMonth(newDate.getMonth() + 1);
+    setCurrentDate(newDate);
+  };
+
+  const handleToday = () => setCurrentDate(new Date());
 
   const handleSaveTask = (taskToSave: Task) => {
     const cleanTask = { ...taskToSave, scheduledStart: undefined };
@@ -86,14 +130,8 @@ export default function Home() {
   const handleDeleteTask = (taskId: string) => setTasks(tasks.filter(t => t.id !== taskId));
   const handleEditTask = (task: Task) => { setEditingTask(task); setIsModalOpen(true); };
   const handleReorderTasks = (reorderedTasks: Task[]) => setTasks(reorderedTasks);
+  const handleToggleComplete = (taskId: string) => setTasks(tasks.map(task => task.id === taskId ? { ...task, completedAt: task.completedAt ? undefined : new Date().toISOString() } : task));
   
-  const handleToggleComplete = (taskId: string) => {
-    setTasks(tasks.map(task => {
-      if (task.id === taskId) return { ...task, completedAt: task.completedAt ? undefined : new Date().toISOString() };
-      return task;
-    }));
-  };
-
   const handleCraftMyDay = () => {
     setIsCrafting(true);
     setTimeout(() => {
@@ -112,7 +150,6 @@ export default function Home() {
     }, 3500); 
   };
 
-  // Logout function
   const handleSignOut = () => {
     localStorage.removeItem('gcal_primary_tokens');
     localStorage.removeItem('gcal_school_tokens');
@@ -122,12 +159,29 @@ export default function Home() {
   return (
     <main className="flex min-h-screen bg-slate-50 text-slate-900 overflow-hidden relative">
       <Sidebar tasks={tasks} onOpenAddTask={() => { setEditingTask(null); setIsModalOpen(true); }} onDeleteTask={handleDeleteTask} onEditTask={handleEditTask} onReorderTasks={handleReorderTasks} onToggleComplete={handleToggleComplete} isCrafting={isCrafting} onCraft={handleCraftMyDay} />
+      
       <div className="flex-1 p-8 flex flex-col h-screen">
         <header className="flex justify-between items-center mb-8 shrink-0 gap-4">
-          <div className="flex-1 min-w-0">
-            <h1 className="text-2xl lg:text-3xl font-black text-slate-900 truncate">{getFormattedDate()}</h1>
-            <p className="text-slate-500 font-medium truncate">Crafting your perfect schedule</p>
+          
+          {/* 4. THIS IS THE NEW HEADER UI WITH THE ARROWS */}
+          <div className="flex items-center gap-6 min-w-0">
+            <h1 className="text-2xl lg:text-3xl font-black text-slate-900 truncate min-w-[280px]">
+              {getFormattedHeader()}
+            </h1>
+            
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden shrink-0">
+              <button onClick={handlePrevious} className="p-2 hover:bg-slate-50 text-slate-600 transition-colors border-r border-slate-200">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button onClick={handleToday} className="px-4 py-2 hover:bg-slate-50 text-slate-700 text-sm font-bold transition-colors border-r border-slate-200">
+                Today
+              </button>
+              <button onClick={handleNext} className="p-2 hover:bg-slate-50 text-slate-600 transition-colors">
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </div>
           </div>
+          
           <div className="flex bg-slate-200/50 p-1 rounded-xl shrink-0">
             {['Day', 'Week', 'Month'].map((viewName) => (
               <button key={viewName} onClick={() => setCurrentView(viewName)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${ currentView === viewName ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700' }`}>
@@ -135,7 +189,8 @@ export default function Home() {
               </button>
             ))}
           </div>
-          <div className="flex-1 flex justify-end relative">
+
+          <div className="flex justify-end relative">
             <button onClick={() => setIsProfileOpen(!isProfileOpen)} className={`h-12 w-12 border rounded-2xl shadow-sm flex items-center justify-center font-bold transition-all ${isProfileOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-indigo-600 hover:border-indigo-200'}`}>
               JD
             </button>
@@ -165,12 +220,13 @@ export default function Home() {
             )}
           </div>
         </header>
+        
         <div className="flex-1 overflow-hidden relative">
           {isCrafting ? <LoadingState /> : (
             <>
-              {currentView === 'Day' && <CalendarGrid tasks={tasks} />}
-              {currentView === 'Week' && <WeekView tasks={tasks} />}
-              {currentView === 'Month' && <MonthView tasks={tasks} />}
+              {currentView === 'Day' && <CalendarGrid tasks={tasks} currentDate={currentDate} />}
+              {currentView === 'Week' && <WeekView tasks={tasks} currentDate={currentDate} />}
+              {currentView === 'Month' && <MonthView tasks={tasks} currentDate={currentDate} />}
             </>
           )}
         </div>

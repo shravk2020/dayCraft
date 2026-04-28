@@ -4,9 +4,10 @@ import { Task } from '../app/page';
 
 interface MonthViewProps {
   tasks: Task[];
+  currentDate: Date;
 }
 
-export default function MonthView({ tasks }: MonthViewProps) {
+export default function MonthView({ tasks, currentDate }: MonthViewProps) {
   const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   // Create an array of 35 blocks to simulate a month grid
   const calendarBlocks = Array.from({ length: 35 }, (_, i) => i + 1);

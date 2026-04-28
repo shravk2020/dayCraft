@@ -1,180 +1,246 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, Loader2, Mail, Lock, User as UserIcon, ArrowRight } from 'lucide-react';
+import { Settings, LogOut, User, ChevronLeft, ChevronRight } from 'lucide-react';
+import Sidebar from '@/components/Sidebar';
+import CalendarGrid from '@/components/CalendarGrid';
+import WeekView from '@/components/WeekView';
+import MonthView from '@/components/MonthView';
+import AddTaskModal from '@/components/AddTaskModal';
+import IntegrationsModal from '@/components/IntegrationsModal';
+import LoadingState from '@/components/LoadingState';
 
-export default function LoginPage() {
+export interface Task {
+  id: string;
+  title: string;
+  source: string;
+  duration: number;
+  dueDate?: string;
+  dueTime?: string;
+  flexibility?: 'Rigid' | 'High Priority' | 'Flexible';
+  description?: string;
+  completedAt?: string;
+  scheduledStart?: string;
+}
+
+export default function Home() {
   const router = useRouter();
-  
-  // Toggle between "login" and "signup" modes
-  const [isLogin, setIsLogin] = useState(true); 
-  
-  // Loading states
-  const [isEmailLoading, setIsEmailLoading] = useState(false);
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(false);
 
-  // Form data
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // NEW: State to track the date we are currently viewing!
+  const [currentDate, setCurrentDate] = useState(new Date());
+  
+  const [currentView, setCurrentView] = useState('Day');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isCrafting, setIsCrafting] = useState(false);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // Handle the Google OAuth Shortcut
-  const handleGoogleAuth = async () => {
-    setIsGoogleLoading(true);
-    try {
-      const response = await fetch('http://localhost:8080/api/auth/url?type=primary');
-      const data = await response.json();
-      if (data.url) window.location.href = data.url; 
-    } catch (error) {
-      console.error("Failed to reach backend:", error);
-      alert("Make sure your backend server is running on port 8080!");
-      setIsGoogleLoading(false);
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenString = urlParams.get('token');
+    const accountType = urlParams.get('type') || 'primary';
+
+    if (tokenString) {
+      localStorage.setItem(`gcal_${accountType}_tokens`, tokenString);
+      window.history.replaceState({}, document.title, "/");
+      setIsAuthorized(true);
+      if (accountType === 'school') setIsIntegrationsOpen(true);
+    } else if (localStorage.getItem('gcal_primary_tokens')) {
+      setIsAuthorized(true);
+    } else {
+      router.push('/login');
+    }
+  }, [router]);
+
+  if (!isAuthorized) return null;
+
+  // NEW: Smart Date Formatter based on the currentView
+  const getFormattedHeader = () => {
+    if (currentView === 'Day') {
+      const weekday = currentDate.toLocaleDateString('en-US', { weekday: 'long' });
+      const month = currentDate.toLocaleDateString('en-US', { month: 'long' });
+      const day = currentDate.getDate();
+      const year = currentDate.getFullYear();
+      const getOrdinal = (n: number) => {
+        const s = ["th", "st", "nd", "rd"];
+        const v = n % 100;
+        return s[(v - 20) % 10] || s[v] || s[0];
+      };
+      return `${weekday}, ${month} ${day}${getOrdinal(day)}, ${year}`;
+    } 
+    
+    if (currentView === 'Week') {
+      // Find the Monday of the current week
+      const dayOfWeek = currentDate.getDay(); // 0 is Sunday, 1 is Monday, etc.
+      const distanceToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      
+      const monday = new Date(currentDate);
+      monday.setDate(currentDate.getDate() + distanceToMonday);
+      
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+
+      const monthStart = monday.toLocaleDateString('en-US', { month: 'long' });
+      const monthEnd = sunday.toLocaleDateString('en-US', { month: 'long' });
+      const yearStart = monday.getFullYear();
+      const yearEnd = sunday.getFullYear();
+
+      // Format smartly (e.g. "April 27 - May 3, 2026" or "April 20 - 26, 2026")
+      if (monthStart === monthEnd) {
+        return `${monthStart} ${monday.getDate()} - ${sunday.getDate()}, ${yearStart}`;
+      } else if (yearStart === yearEnd) {
+        return `${monthStart} ${monday.getDate()} - ${monthEnd} ${sunday.getDate()}, ${yearStart}`;
+      } else {
+        return `${monthStart} ${monday.getDate()}, ${yearStart} - ${monthEnd} ${sunday.getDate()}, ${yearEnd}`;
+      }
+    } 
+    
+    if (currentView === 'Month') {
+      return currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     }
   };
 
-  // Handle traditional Email/Password Auth
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault(); // Prevent page reload
-    setIsEmailLoading(true);
+  // NEW: Navigation Functions
+  const handlePrevious = () => {
+    const newDate = new Date(currentDate);
+    if (currentView === 'Day') newDate.setDate(newDate.getDate() - 1);
+    if (currentView === 'Week') newDate.setDate(newDate.getDate() - 7);
+    if (currentView === 'Month') newDate.setMonth(newDate.getMonth() - 1);
+    setCurrentDate(newDate);
+  };
 
-    // FAKE BACKEND DELAY FOR PROTOTYPE
+  const handleNext = () => {
+    const newDate = new Date(currentDate);
+    if (currentView === 'Day') newDate.setDate(newDate.getDate() + 1);
+    if (currentView === 'Week') newDate.setDate(newDate.getDate() + 7);
+    if (currentView === 'Month') newDate.setMonth(newDate.getMonth() + 1);
+    setCurrentDate(newDate);
+  };
+
+  const handleToday = () => {
+    setCurrentDate(new Date());
+  };
+
+  const handleSaveTask = (taskToSave: Task) => {
+    const cleanTask = { ...taskToSave, scheduledStart: undefined };
+    if (editingTask) setTasks(tasks.map(t => t.id === cleanTask.id ? cleanTask : t));
+    else setTasks([...tasks, cleanTask]);
+    setIsModalOpen(false);
+    setEditingTask(null);
+  };
+
+  const handleDeleteTask = (taskId: string) => setTasks(tasks.filter(t => t.id !== taskId));
+  const handleEditTask = (task: Task) => { setEditingTask(task); setIsModalOpen(true); };
+  const handleReorderTasks = (reorderedTasks: Task[]) => setTasks(reorderedTasks);
+  const handleToggleComplete = (taskId: string) => setTasks(tasks.map(task => task.id === taskId ? { ...task, completedAt: task.completedAt ? undefined : new Date().toISOString() } : task));
+  
+  const handleCraftMyDay = () => {
+    setIsCrafting(true);
     setTimeout(() => {
-      setIsEmailLoading(false);
-      
-      // In the future, this is where we send the email/password/name to your Node.js database!
-      console.log(isLogin ? "Logging in..." : "Creating account...", { name, email, password });
-      
-      alert(isLogin ? "Welcome back!" : "Account created! Now let's connect your calendar.");
-      
-      // We still need Google Calendar tokens for the dashboard to work, 
-      // but later we will route them to an onboarding flow here!
-    }, 1500);
+      setIsCrafting(false);
+      let currentHour = 9;
+      let currentMinute = 0;
+      const scheduledTasks = tasks.map(task => {
+        if (task.completedAt) return task;
+        const formatTime = (h: number, m: number) => `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        const scheduledStart = formatTime(currentHour, currentMinute);
+        currentMinute += task.duration + 15;
+        while (currentMinute >= 60) { currentHour += 1; currentMinute -= 60; }
+        return { ...task, scheduledStart };
+      });
+      setTasks(scheduledTasks);
+    }, 3500); 
+  };
+
+  const handleSignOut = () => {
+    localStorage.removeItem('gcal_primary_tokens');
+    localStorage.removeItem('gcal_school_tokens');
+    router.push('/login');
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-indigo-400/10 rounded-full blur-3xl pointer-events-none" />
+    <main className="flex min-h-screen bg-slate-50 text-slate-900 overflow-hidden relative">
+      <Sidebar tasks={tasks} onOpenAddTask={() => { setEditingTask(null); setIsModalOpen(true); }} onDeleteTask={handleDeleteTask} onEditTask={handleEditTask} onReorderTasks={handleReorderTasks} onToggleComplete={handleToggleComplete} isCrafting={isCrafting} onCraft={handleCraftMyDay} />
       
-      <div className="bg-white w-full max-w-md rounded-[32px] p-8 sm:p-10 shadow-2xl border border-slate-100 relative z-10 flex flex-col items-center">
-        
-        {/* Logo */}
-        <div className="bg-indigo-600 p-3.5 rounded-2xl shadow-lg shadow-indigo-200 mb-6">
-          <Sparkles className="text-white w-7 h-7" />
-        </div>
-
-        <h1 className="text-2xl font-black text-slate-900 mb-2 text-center">
-          {isLogin ? 'Welcome back' : 'Create your account'}
-        </h1>
-        <p className="text-slate-500 font-medium mb-8 text-center text-sm">
-          {isLogin ? 'Enter your details to access your workspace.' : 'Start crafting your perfect schedule with AI.'}
-        </p>
-
-        {/* The Form */}
-        <form onSubmit={handleEmailAuth} className="w-full space-y-4 mb-6">
+      <div className="flex-1 p-8 flex flex-col h-screen">
+        <header className="flex justify-between items-center mb-8 shrink-0 gap-4">
           
-          {/* Only show the Name field if they are signing up */}
-          {!isLogin && (
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                <UserIcon className="h-5 w-5 text-slate-400" />
-              </div>
-              <input 
-                type="text" 
-                placeholder="Full Name" 
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required={!isLogin}
-                className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-              />
+          {/* UPDATED: Dynamic Header with Navigation Buttons */}
+          <div className="flex items-center gap-6 min-w-0">
+            <h1 className="text-2xl lg:text-3xl font-black text-slate-900 truncate min-w-[280px]">
+              {getFormattedHeader()}
+            </h1>
+            
+            <div className="flex items-center bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden shrink-0">
+              <button onClick={handlePrevious} className="p-2 hover:bg-slate-50 text-slate-600 transition-colors border-r border-slate-200">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button onClick={handleToday} className="px-4 py-2 hover:bg-slate-50 text-slate-700 text-sm font-bold transition-colors border-r border-slate-200">
+                Today
+              </button>
+              <button onClick={handleNext} className="p-2 hover:bg-slate-50 text-slate-600 transition-colors">
+                <ChevronRight className="w-5 h-5" />
+              </button>
             </div>
-          )}
-
-          {/* Email Field */}
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <Mail className="h-5 w-5 text-slate-400" />
-            </div>
-            <input 
-              type="email" 
-              placeholder="Email address" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-            />
+          </div>
+          
+          {/* View Toggles */}
+          <div className="flex bg-slate-200/50 p-1 rounded-xl shrink-0">
+            {['Day', 'Week', 'Month'].map((viewName) => (
+              <button key={viewName} onClick={() => setCurrentView(viewName)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${ currentView === viewName ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700' }`}>
+                {viewName}
+              </button>
+            ))}
           </div>
 
-          {/* Password Field */}
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <Lock className="h-5 w-5 text-slate-400" />
-            </div>
-            <input 
-              type="password" 
-              placeholder="Password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-            />
-          </div>
-
-          {/* Submit Button */}
-          <button 
-            type="submit"
-            disabled={isEmailLoading || isGoogleLoading}
-            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-6 rounded-xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-70 mt-2"
-          >
-            {isEmailLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
+          <div className="flex justify-end relative">
+            <button onClick={() => setIsProfileOpen(!isProfileOpen)} className={`h-12 w-12 border rounded-2xl shadow-sm flex items-center justify-center font-bold transition-all ${isProfileOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-indigo-600 hover:border-indigo-200'}`}>
+              JD
+            </button>
+            {isProfileOpen && (
               <>
-                {isLogin ? 'Sign In' : 'Create Account'}
-                <ArrowRight className="w-4 h-4" />
+                <div className="fixed inset-0 z-40" onClick={() => setIsProfileOpen(false)} />
+                <div className="absolute right-0 top-14 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-50">
+                  <div className="px-4 py-3 border-b border-slate-100 mb-1">
+                    <p className="text-sm font-bold text-slate-800">John Doe</p>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">john@student.edu</p>
+                  </div>
+                  <div className="px-2 space-y-1">
+                    <button className="w-full text-left px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-xl flex items-center gap-2 transition-colors">
+                      <User className="w-4 h-4" /> Account Settings
+                    </button>
+                    <button onClick={() => { setIsProfileOpen(false); setIsIntegrationsOpen(true); }} className="w-full text-left px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-xl flex items-center gap-2 transition-colors">
+                      <Settings className="w-4 h-4" /> Integrations
+                    </button>
+                  </div>
+                  <div className="px-2 mt-1 pt-1 border-t border-slate-100">
+                    <button onClick={handleSignOut} className="w-full text-left px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-2 transition-colors">
+                      <LogOut className="w-4 h-4" /> Sign Out
+                    </button>
+                  </div>
+                </div>
               </>
             )}
-          </button>
-        </form>
-
-        {/* Divider */}
-        <div className="w-full flex items-center gap-4 mb-6">
-          <div className="h-px bg-slate-200 flex-1" />
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">OR</span>
-          <div className="h-px bg-slate-200 flex-1" />
-        </div>
-
-        {/* Google Shortcut */}
-        <button 
-          onClick={handleGoogleAuth}
-          disabled={isGoogleLoading || isEmailLoading}
-          type="button"
-          className="w-full bg-white border-2 border-slate-200 hover:border-indigo-200 hover:bg-indigo-50 text-slate-700 font-bold py-3.5 px-6 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-95 disabled:opacity-50"
-        >
-          {isGoogleLoading ? <Loader2 className="w-5 h-5 animate-spin text-indigo-600" /> : (
+          </div>
+        </header>
+        
+        <div className="flex-1 overflow-hidden relative">
+          {isCrafting ? <LoadingState /> : (
             <>
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-              </svg>
-              Continue with Google
+              {/* Note: I added currentDate={currentDate} to these components so you can use it inside them! */}
+              {currentView === 'Day' && <CalendarGrid tasks={tasks} currentDate={currentDate} />}
+              {currentView === 'Week' && <WeekView tasks={tasks} currentDate={currentDate} />}
+              {currentView === 'Month' && <MonthView tasks={tasks} currentDate={currentDate} />}
             </>
           )}
-        </button>
-
-        {/* Toggle Button */}
-        <p className="text-sm font-medium text-slate-500 mt-8">
-          {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
-          <button 
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-indigo-600 font-bold hover:underline"
-          >
-            {isLogin ? 'Sign up' : 'Sign in'}
-          </button>
-        </p>
-
+        </div>
       </div>
-    </div>
+      <AddTaskModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingTask(null); }} onSave={handleSaveTask} editingTask={editingTask} />
+      <IntegrationsModal isOpen={isIntegrationsOpen} onClose={() => setIsIntegrationsOpen(false)} />
+    </main>
   );
 }
