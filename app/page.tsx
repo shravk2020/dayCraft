@@ -27,8 +27,10 @@ export interface Task {
 export default function Home() {
   const router = useRouter();
   
-  // 1. THE BOUNCER STATE
+  // 1. NEW STATES FOR AUTH AND PROFILE
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [userProfile, setUserProfile] = useState<{name: string, email: string, initials: string} | null>(null);
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [currentView, setCurrentView] = useState('Day');
@@ -39,45 +41,48 @@ export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // 2. THE TOKEN CATCHER & ROUTER
+  // 2. THE UPDATED TOKEN CATCHER & DECODER
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get('token');
     const accountType = urlParams.get('type') || 'primary';
-    const storedToken = localStorage.getItem('gcal_primary_tokens');
+    let storedToken = localStorage.getItem('gcal_primary_tokens');
 
     if (urlToken) {
-      // Scenario A: Freshly back from Google Login
       localStorage.setItem(`gcal_${accountType}_tokens`, urlToken);
       window.history.replaceState({}, document.title, "/");
-      setIsAuthorized(true);
+      storedToken = urlToken;
       
-      // If they were adding a secondary calendar, pop the modal back open
       if (accountType !== 'primary') {
         setIsIntegrationsOpen(true);
       }
-    } else if (storedToken) {
-      // Scenario B: Already logged in from a past visit
-      setIsAuthorized(true);
-    } else {
-      // Scenario C: Intruders! Kick to login
-      router.push('/login');
     }
+
+    if (storedToken) {
+      try {
+        const parsed = JSON.parse(storedToken);
+        // Magic Trick: Google encodes the user info in base64 inside the id_token!
+        if (parsed.id_token) {
+          const payload = JSON.parse(atob(parsed.id_token.split('.')[1]));
+          const name = payload.name || 'User';
+          const email = payload.email || '';
+          const initials = name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
+          
+          setUserProfile({ name, email, initials });
+        }
+        setIsAuthorized(true);
+      } catch (e) {
+        console.error("Token parsing error:", e);
+      }
+    } else {
+      // We no longer router.push('/login') here! We let guests stay.
+      setIsAuthorized(false);
+    }
+    
+    setIsCheckingAuth(false);
   }, [router]);
 
-  // 3. THE LOADING WALL
-  if (!isAuthorized) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="animate-pulse flex flex-col items-center gap-4">
-          <div className="w-12 h-12 bg-indigo-200 rounded-2xl"></div>
-          <p className="text-slate-400 font-medium text-sm">Loading workspace...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // --- THE REST OF YOUR APP ---
+  // --- THE REST OF YOUR APP LOGIC ---
 
   const getFormattedHeader = () => {
     if (currentView === 'Day') {
@@ -172,7 +177,9 @@ export default function Home() {
   const handleSignOut = () => {
     localStorage.removeItem('gcal_primary_tokens');
     localStorage.removeItem('gcal_school_tokens');
-    router.push('/login');
+    setIsAuthorized(false);
+    setUserProfile(null);
+    setIsProfileOpen(false);
   };
 
   return (
@@ -208,32 +215,57 @@ export default function Home() {
             ))}
           </div>
 
-          <div className="flex justify-end relative">
-            <button onClick={() => setIsProfileOpen(!isProfileOpen)} className={`h-12 w-12 border rounded-2xl shadow-sm flex items-center justify-center font-bold transition-all ${isProfileOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-indigo-600 hover:border-indigo-200'}`}>
-              JD
-            </button>
-            {isProfileOpen && (
+          <div className="flex justify-end relative items-center gap-4">
+            {isCheckingAuth ? (
+              // Show a skeleton loader while parsing the token
+              <div className="h-12 w-24 bg-slate-200 animate-pulse rounded-xl"></div>
+            ) : !isAuthorized ? (
+              // NOT LOGGED IN: Show Log In / Sign Up
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => router.push('/login')} 
+                  className="text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors px-2"
+                >
+                  Log In
+                </button>
+                <button 
+                  onClick={() => router.push('/login')} 
+                  className="text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl shadow-sm transition-all active:scale-95"
+                >
+                  Sign Up
+                </button>
+              </div>
+            ) : (
+              // LOGGED IN: Show Profile Icon
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setIsProfileOpen(false)} />
-                <div className="absolute right-0 top-14 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-50">
-                  <div className="px-4 py-3 border-b border-slate-100 mb-1">
-                    <p className="text-sm font-bold text-slate-800">John Doe</p>
-                    <p className="text-xs text-slate-500 font-medium mt-0.5">john@student.edu</p>
-                  </div>
-                  <div className="px-2 space-y-1">
-                    <button className="w-full text-left px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-xl flex items-center gap-2 transition-colors">
-                      <User className="w-4 h-4" /> Account Settings
-                    </button>
-                    <button onClick={() => { setIsProfileOpen(false); setIsIntegrationsOpen(true); }} className="w-full text-left px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-xl flex items-center gap-2 transition-colors">
-                      <Settings className="w-4 h-4" /> Integrations
-                    </button>
-                  </div>
-                  <div className="px-2 mt-1 pt-1 border-t border-slate-100">
-                    <button onClick={handleSignOut} className="w-full text-left px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-2 transition-colors">
-                      <LogOut className="w-4 h-4" /> Sign Out
-                    </button>
-                  </div>
-                </div>
+                <button onClick={() => setIsProfileOpen(!isProfileOpen)} className={`h-12 w-12 border rounded-2xl shadow-sm flex items-center justify-center font-bold transition-all ${isProfileOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-indigo-600 hover:border-indigo-200'}`}>
+                  {userProfile?.initials || 'JD'}
+                </button>
+                
+                {isProfileOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsProfileOpen(false)} />
+                    <div className="absolute right-0 top-14 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl py-2 z-50">
+                      <div className="px-4 py-3 border-b border-slate-100 mb-1">
+                        <p className="text-sm font-bold text-slate-800 truncate">{userProfile?.name || 'John Doe'}</p>
+                        <p className="text-xs text-slate-500 font-medium mt-0.5 truncate">{userProfile?.email || 'john@student.edu'}</p>
+                      </div>
+                      <div className="px-2 space-y-1">
+                        <button className="w-full text-left px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-xl flex items-center gap-2 transition-colors">
+                          <User className="w-4 h-4" /> Account Settings
+                        </button>
+                        <button onClick={() => { setIsProfileOpen(false); setIsIntegrationsOpen(true); }} className="w-full text-left px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-xl flex items-center gap-2 transition-colors">
+                          <Settings className="w-4 h-4" /> Integrations
+                        </button>
+                      </div>
+                      <div className="px-2 mt-1 pt-1 border-t border-slate-100">
+                        <button onClick={handleSignOut} className="w-full text-left px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-2 transition-colors">
+                          <LogOut className="w-4 h-4" /> Sign Out
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
               </>
             )}
           </div>
