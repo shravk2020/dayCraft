@@ -26,11 +26,11 @@ export interface Task {
 
 export default function Home() {
   const router = useRouter();
+  
+  // 1. THE BOUNCER STATE
   const [isAuthorized, setIsAuthorized] = useState(false);
 
-  // 1. THIS CONTROLS THE DATE WE ARE LOOKING AT
   const [currentDate, setCurrentDate] = useState(new Date());
-  
   const [currentView, setCurrentView] = useState('Day');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
@@ -39,26 +39,46 @@ export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
+  // 2. THE TOKEN CATCHER & ROUTER
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const tokenString = urlParams.get('token');
+    const urlToken = urlParams.get('token');
     const accountType = urlParams.get('type') || 'primary';
+    const storedToken = localStorage.getItem('gcal_primary_tokens');
 
-    if (tokenString) {
-      localStorage.setItem(`gcal_${accountType}_tokens`, tokenString);
+    if (urlToken) {
+      // Scenario A: Freshly back from Google Login
+      localStorage.setItem(`gcal_${accountType}_tokens`, urlToken);
       window.history.replaceState({}, document.title, "/");
       setIsAuthorized(true);
-      if (accountType === 'school') setIsIntegrationsOpen(true);
-    } else if (localStorage.getItem('gcal_primary_tokens')) {
+      
+      // If they were adding a secondary calendar, pop the modal back open
+      if (accountType !== 'primary') {
+        setIsIntegrationsOpen(true);
+      }
+    } else if (storedToken) {
+      // Scenario B: Already logged in from a past visit
       setIsAuthorized(true);
     } else {
+      // Scenario C: Intruders! Kick to login
       router.push('/login');
     }
   }, [router]);
 
-  if (!isAuthorized) return null;
+  // 3. THE LOADING WALL
+  if (!isAuthorized) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="animate-pulse flex flex-col items-center gap-4">
+          <div className="w-12 h-12 bg-indigo-200 rounded-2xl"></div>
+          <p className="text-slate-400 font-medium text-sm">Loading workspace...</p>
+        </div>
+      </div>
+    );
+  }
 
-  // 2. THIS MAKES THE TEXT AT THE TOP CHANGE DYNAMICALLY
+  // --- THE REST OF YOUR APP ---
+
   const getFormattedHeader = () => {
     if (currentView === 'Day') {
       const weekday = currentDate.toLocaleDateString('en-US', { weekday: 'long' });
@@ -100,7 +120,6 @@ export default function Home() {
     }
   };
 
-  // 3. THESE ARE THE FUNCTIONS FOR THE ARROWS
   const handlePrevious = () => {
     const newDate = new Date(currentDate);
     if (currentView === 'Day') newDate.setDate(newDate.getDate() - 1);
@@ -163,7 +182,6 @@ export default function Home() {
       <div className="flex-1 p-8 flex flex-col h-screen">
         <header className="flex justify-between items-center mb-8 shrink-0 gap-4">
           
-          {/* 4. THIS IS THE NEW HEADER UI WITH THE ARROWS */}
           <div className="flex items-center gap-6 min-w-0">
             <h1 className="text-2xl lg:text-3xl font-black text-slate-900 truncate min-w-[280px]">
               {getFormattedHeader()}

@@ -26,7 +26,6 @@ export default function IntegrationsModal({ isOpen, onClose }: IntegrationsModal
   const [newProvider, setNewProvider] = useState<'gcal' | 'canvas' | 'classroom'>('gcal');
   const [newName, setNewName] = useState('');
 
-  // 1. Load the list of integrations AND check if they are connected
   useEffect(() => {
     if (isOpen) {
       // Pull their custom list of apps from memory (or load defaults if new user)
@@ -53,11 +52,9 @@ export default function IntegrationsModal({ isOpen, onClose }: IntegrationsModal
     }
   }, [isOpen]);
 
-  // 2. Handle adding a brand new integration to the list
   const handleAddNew = () => {
     if (!newName.trim()) return;
 
-    // Create a unique ID so the backend knows exactly which app this is
     const uniqueId = `custom_${Date.now()}`;
     
     const newIntegration: Integration = {
@@ -73,7 +70,7 @@ export default function IntegrationsModal({ isOpen, onClose }: IntegrationsModal
     const updatedList = [...integrations, newIntegration];
     setIntegrations(updatedList);
     
-    // Save this new layout to local storage so it remembers it next time!
+    // Save this new layout to local storage so it remembers
     localStorage.setItem('daycraft_integrations_list', JSON.stringify(
       updatedList.map(i => ({ id: i.id, provider: i.provider, name: i.name }))
     ));
@@ -83,11 +80,11 @@ export default function IntegrationsModal({ isOpen, onClose }: IntegrationsModal
     setNewName('');
   };
 
-  // 3. Handle flipping the toggle switch
+  // Handle flipping the toggle switch
   const toggleIntegration = async (app: Integration) => {
     const turningOn = !app.isActive;
 
-    // FAKE BEHAVIOR FOR CANVAS/CLASSROOM
+  // FAKE BEHAVIOR FOR CANVAS/CLASSROOM!! REMOVE LATER WITH BACKEND IMPLEMENTATION!!
     if (app.provider !== 'gcal') {
       setIntegrations(current => current.map(int => int.id === app.id ? { ...int, isSyncing: true, status: 'Syncing...' } : int));
       setTimeout(() => {
@@ -102,7 +99,8 @@ export default function IntegrationsModal({ isOpen, onClose }: IntegrationsModal
       return;
     }
 
-    // REAL BACKEND CALL FOR GOOGLE CALENDAR
+    // REAL BACKEND CALL FOR GOOGLE CALENDAR --> need to actually work on pulling in info from calendar, just giving access
+    // look into multiple emails and accounts with credentials + legality
     setIntegrations(current => current.map(int => {
       if (int.id === app.id) {
         if (!turningOn) {
@@ -116,7 +114,7 @@ export default function IntegrationsModal({ isOpen, onClose }: IntegrationsModal
 
     if (turningOn) {
       try {
-        // We pass the unique ID to the backend as the 'type'!
+        // We pass the unique ID to the backend
         const response = await fetch(`http://localhost:8080/api/auth/url?type=${app.id}`);
         const data = await response.json();
         if (data.url) window.location.href = data.url; 
