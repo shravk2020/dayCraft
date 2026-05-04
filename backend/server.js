@@ -88,11 +88,59 @@ app.get('/oauth2callback', async (req, res) => {
     }
 
     console.log(' Kicking user back to dashboard');
-    res.redirect(`http://localhost:3000?token=${encodeURIComponent(JSON.stringify(tokens))}&type=${accountType}`);
-  } catch (error) {
+    res.redirect(`http://localhost:3000?token=${encodeURIComponent(JSON.stringify(tokens))}&type=${accountType}`);  } catch (error) {
     console.error('\nFATAL ERROR IN CALLBACK:');
     console.error(error);
     res.status(500).send('Authentication failed');
+  }
+});
+
+// Route 3: Fetch real Google Calendar events using the Database
+app.get('/api/calendar/events', async (req, res) => {
+  const userEmail = req.query.email; // The frontend sends the email
+
+  if (!userEmail) return res.status(400).send('Email is required');
+
+  try {
+    // 1. Find the user in MongoDB
+    const user = await User.findOne({ email: userEmail });
+    if (!user) return res.status(404).send('User not found in database');
+
+    // 2. Set the credentials for this specific user
+    oAuth2Client.setCredentials(user.tokens);
+    const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
+
+    // 3. Define the time window (today to 7 days from now)
+    const timeMin = new Date();
+    timeMin.setHours(0, 0, 0, 0); // Start at the beginning of today
+    
+    const timeMax = new Date();
+    timeMax.setDate(timeMax.getDate() + 7);
+
+    // 4. Ask Google for the events
+    const response = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: timeMin.toISOString(),
+      timeMax: timeMax.toISOString(),
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
+
+    // 5. Clean up the data before sending it to the frontend
+    // Google sends a lot of junk; we only want the essentials!
+    const events = response.data.items.map(event => ({
+      id: event.id,
+      title: event.summary,
+      start: event.start.dateTime || event.start.date, // handles all-day events
+      end: event.end.dateTime || event.end.date,
+      description: event.description || '',
+      location: event.location || ''
+    }));
+
+    res.json(events);
+  } catch (error) {
+    console.error('Error fetching from Google:', error);
+    res.status(500).send('Failed to fetch calendar events');
   }
 });
 

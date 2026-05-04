@@ -40,6 +40,7 @@ export default function Home() {
   const [isCrafting, setIsCrafting] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
 
   // 2. THE UPDATED TOKEN CATCHER & DECODER
   useEffect(() => {
@@ -82,7 +83,24 @@ export default function Home() {
     setIsCheckingAuth(false);
   }, [router]);
 
-  // --- THE REST OF YOUR APP LOGIC ---
+useEffect(() => {
+  // Only fetch if we actually have a logged-in user profile!
+  if (isAuthorized && userProfile?.email) {
+    const fetchEvents = async () => {
+      try {
+        const response = await fetch(`http://localhost:8080/api/calendar/events?email=${userProfile.email}`);
+        if (!response.ok) throw new Error('Failed to fetch');
+        const data = await response.json();
+        
+        console.log("📅 Real Events Loaded:", data);
+        setCalendarEvents(data);
+      } catch (err) {
+        console.error("Calendar fetch error:", err);
+      }
+    };
+    fetchEvents();
+  }
+}, [isAuthorized, userProfile]);
 
   const getFormattedHeader = () => {
     if (currentView === 'Day') {
@@ -274,7 +292,13 @@ export default function Home() {
         <div className="flex-1 overflow-hidden relative">
           {isCrafting ? <LoadingState /> : (
             <>
-              {currentView === 'Day' && <CalendarGrid tasks={tasks} currentDate={currentDate} />}
+              {currentView === 'Day' && (
+                <CalendarGrid 
+                  tasks={tasks} 
+                  currentDate={currentDate} 
+                  googleEvents = {calendarEvents} // <-- Pass the real data here!
+                />
+              )}
               {currentView === 'Week' && <WeekView tasks={tasks} currentDate={currentDate} />}
               {currentView === 'Month' && <MonthView tasks={tasks} currentDate={currentDate} />}
             </>
