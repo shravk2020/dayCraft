@@ -6,15 +6,21 @@ import { Task } from '../app/page';
 interface WeekViewProps {
   tasks: Task[];
   currentDate: Date;
+  googleEvents?: any[];
 }
 
-export default function WeekView({ tasks, currentDate }: WeekViewProps) {
+export default function WeekView({ tasks, currentDate, googleEvents = []}: WeekViewProps) {
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
 
   const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const hours = Array.from({ length: 24 }, (_, i) => i);
   
-  // Right now, our fake AI schedules everything on "Today" (Monday)
+  // Find Monday of the current week to align columns properly
+  const currentDayOfWeek = currentDate.getDay(); 
+  const distanceToMonday = currentDayOfWeek === 0 ? -6 : 1 - currentDayOfWeek;
+  const monday = new Date(currentDate);
+  monday.setDate(currentDate.getDate() + distanceToMonday);
+
   const scheduledTasks = tasks.filter(task => !task.completedAt && task.scheduledStart);
 
   // The CSS Math to place tasks vertically
@@ -30,6 +36,20 @@ export default function WeekView({ tasks, currentDate }: WeekViewProps) {
     };
   };
 
+  const getEventStyles = (startStr: string, endStr: string) => {
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+    const startHour = start.getHours();
+    const startMinute = start.getMinutes();
+    const durationMinutes = (end.getTime() - start.getTime()) / (1000 * 60);
+
+    const pixelsPerMinute = 80 / 60;
+    return {
+      top: `${(startHour * 80) + (startMinute * pixelsPerMinute)}px`,
+      height: `${durationMinutes * pixelsPerMinute}px`,
+    };
+  };
+
   return (
     <div 
       className="bg-white rounded-[32px] border border-slate-200 h-full shadow-sm flex flex-col overflow-hidden"
@@ -37,18 +57,23 @@ export default function WeekView({ tasks, currentDate }: WeekViewProps) {
     >
       {/* 1. STICKY HEADER (Days of the week) */}
       <div className="flex border-b border-slate-100 shrink-0 bg-white z-20">
-        {/* Top-left empty corner above the timestamps */}
         <div className="w-16 shrink-0 border-r border-slate-100 bg-slate-50/30"></div>
         
         {/* The 7 Day Columns */}
-        {daysOfWeek.map((day, index) => (
-          <div key={day} className="flex-1 py-3 flex flex-col items-center justify-center gap-1 border-r border-slate-100 last:border-0">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{day}</span>
-            <span className={`text-lg font-black ${index === 0 ? 'text-indigo-600 bg-indigo-50 w-7 h-7 rounded-full flex items-center justify-center' : 'text-slate-700'}`}>
-              {27 + index > 30 ? (27 + index) - 30 : 27 + index}
-            </span>
-          </div>
-        ))}
+        {daysOfWeek.map((day, index) => {
+          const columnDate = new Date(monday);
+          columnDate.setDate(monday.getDate() + index);
+          const isToday = columnDate.toDateString() === new Date().toDateString();
+
+          return (
+            <div key={day} className="flex-1 py-3 flex flex-col items-center justify-center gap-1 border-r border-slate-100 last:border-0">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{day}</span>
+              <span className={`text-lg font-black ${isToday ? 'text-indigo-600 bg-indigo-50 w-7 h-7 rounded-full flex items-center justify-center' : 'text-slate-700'}`}>
+                {columnDate.getDate()}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       {/* 2. SCROLLABLE CALENDAR BODY */}
@@ -62,7 +87,7 @@ export default function WeekView({ tasks, currentDate }: WeekViewProps) {
               const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
               const ampm = isPM ? 'PM' : 'AM';
               return (
-                <div key={hour} className="h-20 text-right pr-2 pt-2 text-[9px] font-bold text-slate-400">
+                <div key={hour} className="h-[80px] text-right pr-2 pt-2 text-[9px] font-bold text-slate-400">
                   {displayHour} {ampm}
                 </div>
               );
@@ -72,55 +97,79 @@ export default function WeekView({ tasks, currentDate }: WeekViewProps) {
           {/* Right Area: The 7 Day Columns & Background Grid */}
           <div className="flex-1 flex relative">
             
-            {/* Horizontal Grid Lines (Behind the tasks) */}
             <div className="absolute inset-0 flex flex-col pointer-events-none">
               {hours.map((hour) => (
-                <div key={hour} className="h-20 border-b border-slate-100 w-full"></div>
+                <div key={hour} className="h-[80px] border-b border-slate-100 w-full"></div>
               ))}
             </div>
 
             {/* The 7 Vertical Day Columns */}
-            {daysOfWeek.map((day, index) => (
-              <div key={day} className="flex-1 border-r border-slate-100 last:border-0 relative">
-                
-                {/* For our prototype, we drop the AI scheduled tasks into the first column (Monday) */}
-                {index === 0 && scheduledTasks.map((task) => {
-                  const isExpanded = expandedTaskId === task.id;
+            {daysOfWeek.map((day, index) => {
+              const columnDate = new Date(monday);
+              columnDate.setDate(monday.getDate() + index);
+              
+              // Filter Google Events specifically for this column's date
+              const columnGoogleEvents = googleEvents?.filter(event => {
+                if (!event.start) return false;
+                return new Date(event.start).toDateString() === columnDate.toDateString();
+              }) || [];
+
+              const isToday = columnDate.toDateString() === new Date().toDateString();
+
+              return (
+                <div key={day} className="flex-1 border-r border-slate-100 last:border-0 relative">
                   
-                  let bgColors = "bg-indigo-50 border-indigo-200 text-indigo-900";
-                  if (task.flexibility === 'Rigid') bgColors = "bg-slate-800 border-slate-900 text-white";
-                  else if (task.flexibility === 'High Priority') bgColors = "bg-orange-50 border-orange-200 text-orange-900";
-
-                  const baseStyle = getTaskStyle(task.scheduledStart!, task.duration);
-                  const expandedStyle = isExpanded 
-                    ? { ...baseStyle, height: 'auto', minHeight: baseStyle.height, zIndex: 50, width: '200%' } // Makes it wider when clicked!
-                    : { ...baseStyle, zIndex: 10 };
-
-                  return (
+                  {/* GOOGLE EVENTS (Rendered behind tasks) */}
+                  {columnGoogleEvents.map((event) => (
                     <div 
-                      key={task.id}
-                      style={expandedStyle}
-                      onClick={(e) => { e.stopPropagation(); setExpandedTaskId(isExpanded ? null : task.id); }}
-                      className={`absolute left-1 right-1 rounded-lg p-2 shadow-sm border overflow-hidden transition-all duration-200 cursor-pointer flex flex-col ${bgColors} ${isExpanded ? 'shadow-xl ring-4 ring-indigo-500/20' : 'hover:shadow-md hover:scale-[1.02]'}`}
+                      key={event.id}
+                      className="absolute left-1 right-1 bg-blue-50/80 border-l-4 border-blue-500 rounded-md p-1.5 shadow-sm overflow-hidden z-0"
+                      style={getEventStyles(event.start, event.end)}
                     >
-                      <h4 className={`font-bold leading-tight ${isExpanded ? 'text-sm mb-1' : 'text-xs truncate'}`}>
-                        {task.title}
-                      </h4>
-                      <div className="text-[9px] font-medium opacity-70 mt-auto truncate">
-                        {task.scheduledStart} • {task.duration}m
-                      </div>
-                      
-                      {/* Show extra details if expanded */}
-                      {isExpanded && task.description && (
-                        <div className="mt-2 text-[10px] font-medium opacity-90 whitespace-pre-wrap leading-relaxed border-t border-black/10 pt-2">
-                          {task.description}
-                        </div>
-                      )}
+                      <p className="text-[10px] font-bold text-blue-900 leading-tight truncate">{event.title}</p>
+                      <p className="text-[8px] text-blue-700 font-medium truncate">
+                        {new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
                     </div>
-                  );
-                })}
-              </div>
-            ))}
+                  ))}
+
+                  {/* DAYCRAFT SCHEDULED TASKS (Only rendered on 'Today' for the prototype) */}
+                  {isToday && scheduledTasks.map((task) => {
+                    const isExpanded = expandedTaskId === task.id;
+                    
+                    let bgColors = "bg-indigo-50 border-indigo-200 text-indigo-900";
+                    if (task.flexibility === 'Rigid') bgColors = "bg-slate-800 border-slate-900 text-white";
+                    else if (task.flexibility === 'High Priority') bgColors = "bg-orange-50 border-orange-200 text-orange-900";
+
+                    const baseStyle = getTaskStyle(task.scheduledStart!, task.duration);
+                    const expandedStyle = isExpanded 
+                      ? { ...baseStyle, height: 'auto', minHeight: baseStyle.height, zIndex: 50, width: '200%' }
+                      : { ...baseStyle, zIndex: 10 };
+
+                    return (
+                      <div 
+                        key={task.id}
+                        style={expandedStyle}
+                        onClick={(e) => { e.stopPropagation(); setExpandedTaskId(isExpanded ? null : task.id); }}
+                        className={`absolute left-1 right-1 rounded-lg p-2 shadow-sm border overflow-hidden transition-all duration-200 cursor-pointer flex flex-col ${bgColors} ${isExpanded ? 'shadow-xl ring-4 ring-indigo-500/20' : 'hover:shadow-md hover:scale-[1.02]'}`}
+                      >
+                        <h4 className={`font-bold leading-tight ${isExpanded ? 'text-sm mb-1' : 'text-xs truncate'}`}>
+                          {task.title}
+                        </h4>
+                        <div className="text-[9px] font-medium opacity-70 mt-auto truncate">
+                          {task.scheduledStart} • {task.duration}m
+                        </div>
+                        {isExpanded && task.description && (
+                          <div className="mt-2 text-[10px] font-medium opacity-90 whitespace-pre-wrap leading-relaxed border-t border-black/10 pt-2">
+                            {task.description}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

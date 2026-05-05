@@ -83,24 +83,46 @@ export default function Home() {
     setIsCheckingAuth(false);
   }, [router]);
 
-useEffect(() => {
-  // Only fetch if we actually have a logged-in user profile!
-  if (isAuthorized && userProfile?.email) {
-    const fetchEvents = async () => {
-      try {
-        const response = await fetch(`http://localhost:8080/api/calendar/events?email=${userProfile.email}`);
-        if (!response.ok) throw new Error('Failed to fetch');
-        const data = await response.json();
-        
-        console.log("📅 Real Events Loaded:", data);
-        setCalendarEvents(data);
-      } catch (err) {
-        console.error("Calendar fetch error:", err);
-      }
-    };
-    fetchEvents();
-  }
-}, [isAuthorized, userProfile]);
+// --- THE DUAL DATA FETCHER ---
+  useEffect(() => {
+    if (isAuthorized && userProfile?.email) {
+      
+      // 1. Fetch Calendar Events
+      const fetchEvents = async () => {
+        try {
+          const response = await fetch(`http://localhost:8080/api/calendar/events?email=${userProfile.email}`);
+          if (!response.ok) throw new Error('Failed to fetch events');
+          const data = await response.json();
+          console.log("📅 Combined Events Loaded:", data);
+          setCalendarEvents(data);
+        } catch (err) {
+          console.error("Calendar fetch error:", err);
+        }
+      };
+
+      // 2. Fetch Classroom Tasks
+      const fetchTasks = async () => {
+        try {
+          const response = await fetch(`http://localhost:8080/api/classroom/tasks?email=${userProfile.email}`);
+          if (!response.ok) throw new Error('Failed to fetch tasks');
+          const data = await response.json();
+          console.log("📚 Classroom Tasks Loaded:", data);
+          
+          // We combine the new Classroom tasks with any manually created ones you might have!
+          setTasks((prevTasks) => {
+            const manualTasks = prevTasks.filter(t => !t.id || !t.id.includes('coursework'));
+            return [...manualTasks, ...data];
+          });
+        } catch (err) {
+          console.error("Task fetch error:", err);
+        }
+      };
+
+      // Run both fetches at the exact same time!
+      fetchEvents();
+      fetchTasks();
+    }
+  }, [isAuthorized, userProfile?.email]);
 
   const getFormattedHeader = () => {
     if (currentView === 'Day') {
@@ -299,14 +321,18 @@ useEffect(() => {
                   googleEvents = {calendarEvents} // <-- Pass the real data here!
                 />
               )}
-              {currentView === 'Week' && <WeekView tasks={tasks} currentDate={currentDate} />}
-              {currentView === 'Month' && <MonthView tasks={tasks} currentDate={currentDate} />}
+              {currentView === 'Week' && <WeekView tasks={tasks} currentDate={currentDate} googleEvents={calendarEvents}/>}
+              {currentView === 'Month' && <MonthView tasks={tasks} currentDate={currentDate} googleEvents={calendarEvents}/>}
             </>
           )}
         </div>
       </div>
       <AddTaskModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingTask(null); }} onSave={handleSaveTask} editingTask={editingTask} />
-      <IntegrationsModal isOpen={isIntegrationsOpen} onClose={() => setIsIntegrationsOpen(false)} />
+      <IntegrationsModal 
+        isOpen={isIntegrationsOpen} 
+        onClose={() => setIsIntegrationsOpen(false)} 
+        primaryEmail={userProfile?.email}
+      />
     </main>
   );
 }

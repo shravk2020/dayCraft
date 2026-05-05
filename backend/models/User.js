@@ -1,25 +1,19 @@
 const mongoose = require('mongoose');
 
-// This is the blueprint for every user that signs up for DayCraft
 const userSchema = new mongoose.Schema({
-  googleId: { 
-    type: String, 
-    required: true, 
-    unique: true // No duplicate accounts!
-  },
-  email: { 
-    type: String, 
-    required: true 
-  },
-  name: { 
-    type: String 
-  },
-  tokens: { 
-    type: Object, // This is where we securely lock away the VIP Google tokens
-    required: true 
-  }
-}, { 
-  timestamps: true // Automatically adds 'createdAt' and 'updatedAt' dates
-});
+  googleId: { type: String, required: true, unique: true },
+  email: { type: String, required: true },
+  name: { type: String },
+  tokens: { type: Object, required: true },
+  
+  // THE FIX: We renamed 'type' to 'accountType' so Mongoose doesn't crash!
+  connectedCalendars: [{
+    accountId: String,
+    email: String,
+    accountType: String, 
+    tokens: Object
+  }]
+  
+}, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);
