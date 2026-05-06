@@ -6,7 +6,6 @@ const userSchema = new mongoose.Schema({
   name: { type: String },
   tokens: { type: Object, required: true },
   
-  // THE FIX: We renamed 'type' to 'accountType' so Mongoose doesn't crash!
   connectedCalendars: [{
     accountId: String,
     email: String,

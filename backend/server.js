@@ -13,8 +13,8 @@ app.use(express.json());
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('✅ Connected to MongoDB; HUZZAH!'))
-  .catch((err) => console.error('❌ MongoDB connection error:', err));
+  .then(() => console.log('Connected to MongoDB; HUZZAH!'))
+  .catch((err) => console.error('MongoDB connection error:', err));
 
 const { client_secret, client_id, redirect_uris } = credentials.web;
 const oAuth2Client = new google.auth.OAuth2(
@@ -23,7 +23,6 @@ const oAuth2Client = new google.auth.OAuth2(
   redirect_uris[0] 
 );
 
-// --- DYNAMIC SCOPES ---
 const BASE_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile'
@@ -81,7 +80,7 @@ app.get('/oauth2callback', async (req, res) => {
     const oauth2 = google.oauth2({ auth: oAuth2Client, version: 'v2' });
     const userInfo = await oauth2.userinfo.get();
     
-    // SCENARIO A: Standard Primary Login
+    // SCEN A: Standard Primary Login
     if (stateObj.type === 'primary' || !stateObj.primaryEmail) {
       let user = await User.findOne({ googleId: userInfo.data.id });
       if (user) {
@@ -95,10 +94,10 @@ app.get('/oauth2callback', async (req, res) => {
           tokens: tokens
         });
         await user.save();
-        console.log(`🎉 Created brand new user: ${user.email}`);
+        console.log(`Created brand new user: ${user.email}`);
       }
     } 
-    // SCENARIO B: Linking a Secondary Account (Calendar or Classroom)
+    // SCEN B: Linking a Secondary Account (Calendar or Classroom)
     else {
       let primaryUser = await User.findOne({ email: stateObj.primaryEmail });
       
@@ -116,7 +115,7 @@ app.get('/oauth2callback', async (req, res) => {
           });
         }
         await primaryUser.save();
-        console.log(`🔗 SUCCESS: Linked ${userInfo.data.email} to ${primaryUser.email} as ${stateObj.type}!`);
+        console.log(`SUCCESS: Linked ${userInfo.data.email} to ${primaryUser.email} as ${stateObj.type}!`);
       }
     }
 
@@ -127,7 +126,7 @@ app.get('/oauth2callback', async (req, res) => {
   }
 });
 
-// Route 3: The Master Aggregator (Fetches ALL Google Calendar Events)
+// Route 3: Fetches ALL Google Calendar Events
 app.get('/api/calendar/events', async (req, res) => {
   const userEmail = req.query.email;
   if (!userEmail) return res.status(400).send('Email is required');
@@ -166,14 +165,14 @@ app.get('/api/calendar/events', async (req, res) => {
     };
 
     // Fetch primary
-    console.log(`📡 Fetching primary calendar for ${user.email}...`);
+    console.log(`Fetching primary calendar for ${user.email}...`);
     const primaryEvents = await fetchFromAccount(user.tokens, 'primary');
     allEvents = [...primaryEvents];
 
     // Fetch linked calendars
     const calendarAccounts = user.connectedCalendars.filter(c => !c.accountType.includes('classroom'));
     for (const account of calendarAccounts) {
-      console.log(`📡 Fetching linked calendar for ${account.email}...`);
+      console.log(`Fetching linked calendar for ${account.email}...`);
       try {
         const linkedEvents = await fetchFromAccount(account.tokens, account.accountType);
         allEvents = [...allEvents, ...linkedEvents];
@@ -182,7 +181,7 @@ app.get('/api/calendar/events', async (req, res) => {
       }
     }
 
-    console.log(`✅ Success! Combined ${allEvents.length} calendar events.`);
+    console.log(`Success! Combined ${allEvents.length} calendar events.`);
     res.json(allEvents);
 
   } catch (error) {
@@ -206,7 +205,7 @@ app.get('/api/classroom/tasks', async (req, res) => {
     const classroomAccounts = user.connectedCalendars.filter(c => c.accountType.includes('classroom'));
 
     for (const account of classroomAccounts) {
-      console.log(`📚 Fetching classroom tasks for ${account.email}...`);
+      console.log(`Fetching classroom tasks for ${account.email}...`);
       const auth = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
       auth.setCredentials(account.tokens);
       const classroom = google.classroom({ version: 'v1', auth });
@@ -247,7 +246,7 @@ app.get('/api/classroom/tasks', async (req, res) => {
       }
     }
     
-    console.log(`✅ Success! Found ${allTasks.length} homework assignments.`);
+    console.log(`Success! Found ${allTasks.length} homework assignments.`);
     res.json(allTasks);
 
   } catch (error) {
@@ -269,7 +268,7 @@ app.delete('/api/auth/disconnect', async (req, res) => {
     );
 
     await user.save();
-    console.log(`🗑️ SUCCESS: Disconnected ${integrationId} from ${primaryEmail}`);
+    console.log(`SUCCESS: Disconnected ${integrationId} from ${primaryEmail}`);
     res.json({ success: true });
   } catch (error) {
     console.error('Error disconnecting calendar:', error);
