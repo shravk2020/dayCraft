@@ -7,6 +7,9 @@ require('dotenv').config();
 const User = require('./models/User'); 
 const credentials = require('./credentials.json');
 
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -234,6 +237,8 @@ app.get('/api/classroom/tasks', async (req, res) => {
               source: course.name,
               duration: 60, // Default duration
               dueDate: dueDateStr,
+              // --- UPGRADE: Grab the exact date the teacher assigned this! ---
+              assignedDate: work.creationTime ? work.creationTime.split('T')[0] : undefined,
               description: work.description || '',
               flexibility: 'Flexible'
             };
@@ -246,8 +251,16 @@ app.get('/api/classroom/tasks', async (req, res) => {
       }
     }
     
-    console.log(`Success! Found ${allTasks.length} homework assignments.`);
-    res.json(allTasks);
+    // --- THE BACKEND DEDUPLICATOR ---
+    // We use a Map. If two tasks have the exact same ID, the Map overwrites the old one, 
+    // mathematically guaranteeing 0 duplicates.
+    const uniqueTasksMap = new Map();
+    allTasks.forEach(task => uniqueTasksMap.set(task.id, task));
+    
+    const cleanTasks = Array.from(uniqueTasksMap.values());
+    
+    console.log(`Success! Found ${cleanTasks.length} unique homework assignments.`);
+    res.json(cleanTasks);
 
   } catch (error) {
     console.error('Classroom Fetch Error:', error);
@@ -273,6 +286,63 @@ app.delete('/api/auth/disconnect', async (req, res) => {
   } catch (error) {
     console.error('Error disconnecting calendar:', error);
     res.status(500).send('Failed to disconnect');
+  }
+});
+
+// --- NEW ROUTE 6: AI Auto-Scheduler (With Chain of Thought) ---
+app.post('/api/ai/schedule', async (req, res) => {
+  const { events, tasks, wakeTime = "08:00", sleepTime = "22:00" } = req.body;
+
+  if (!tasks || tasks.length === 0) return res.json([]);
+
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    // THE UPGRADED PROMPT
+    const prompt = `
+      You are the DayCraft AI Auto-Scheduler. Your job is to strictly schedule flexible tasks into empty gaps in a user's day.
+
+      CRITICAL RULES:
+      1. NO OVERLAPPING: You absolutely cannot schedule a task during a "FIXED EVENT".
+      2. BUFFER: You must leave at least 15 minutes of empty space before and after any FIXED EVENT.
+      3. TIME BOUNDARIES: Only schedule between ${wakeTime} and ${sleepTime}.
+      4. PRIORITIZATION: Look at the "dueDate" and "assignedDate". Tasks that are due today or tomorrow must be scheduled FIRST, as early in the day as possible. Older tasks should be prioritized over newer tasks if due dates are identical.
+
+      TODAY'S FIXED EVENTS:
+      ${JSON.stringify(events.map(e => ({ title: e.title, start: e.start, end: e.end })))}
+
+      TASKS TO SCHEDULE:
+      ${JSON.stringify(tasks.map(t => ({ id: t.id, title: t.title, duration_minutes: t.duration, dueDate: t.dueDate, assignedDate: t.assignedDate })))}
+
+      OUTPUT FORMAT:
+      You must respond with a raw JSON object (no markdown, no backticks). You must do a gap analysis first to ensure you don't overlap, then provide the schedule.
+      {
+        "gapAnalysis": "Explain your math. List the exact empty blocks of time available today, then explain which task you are putting where based on due dates.",
+        "schedule": [
+          { "id": "task_123", "scheduledStart": "09:30" }
+        ]
+      }
+    `;
+
+    console.log("AI is analyzing gaps and prioritizing due dates...");
+    const result = await model.generateContent(prompt);
+    let textResponse = result.response.text();
+
+    // Strip out markdown formatting just in case the AI disobeys the raw JSON rule
+    textResponse = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    const parsedResponse = JSON.parse(textResponse);
+    
+    // Print the AI's internal thoughts to your terminal so you can see its math!
+    console.log(`\n--- AI THOUGHT PROCESS ---\n${parsedResponse.gapAnalysis}\n--------------------------\n`);
+    console.log(`✨ AI successfully scheduled ${parsedResponse.schedule.length} tasks!`);
+    
+    // Send just the schedule array back to the React frontend
+    res.json(parsedResponse.schedule);
+
+  } catch (error) {
+    console.error('AI Scheduling Error:', error);
+    res.status(500).send('Failed to generate AI schedule');
   }
 });
 

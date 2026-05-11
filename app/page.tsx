@@ -27,7 +27,6 @@ export interface Task {
 export default function Home() {
   const router = useRouter();
   
-  // 1. NEW STATES FOR AUTH AND PROFILE
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [userProfile, setUserProfile] = useState<{name: string, email: string, initials: string} | null>(null);
@@ -42,7 +41,6 @@ export default function Home() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
 
-  // 2. THE UPDATED TOKEN CATCHER & DECODER
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get('token');
@@ -62,7 +60,6 @@ export default function Home() {
     if (storedToken) {
       try {
         const parsed = JSON.parse(storedToken);
-        // Magic Trick: Google encodes the user info in base64 inside the id_token!
         if (parsed.id_token) {
           const payload = JSON.parse(atob(parsed.id_token.split('.')[1]));
           const name = payload.name || 'User';
@@ -76,14 +73,13 @@ export default function Home() {
         console.error("Token parsing error:", e);
       }
     } else {
-      // We no longer router.push('/login') here! We let guests stay.
       setIsAuthorized(false);
     }
     
     setIsCheckingAuth(false);
   }, [router]);
 
-// --- THE DUAL DATA FETCHER ---
+  // --- THE DUAL DATA FETCHER ---
   useEffect(() => {
     if (isAuthorized && userProfile?.email) {
       
@@ -93,8 +89,12 @@ export default function Home() {
           const response = await fetch(`http://localhost:8080/api/calendar/events?email=${userProfile.email}`);
           if (!response.ok) throw new Error('Failed to fetch events');
           const data = await response.json();
-          console.log("📅 Combined Events Loaded:", data);
-          setCalendarEvents(data);
+          
+          // THE BOUNCER: Destroy duplicate events from shared calendars
+          const uniqueEventsMap = new Map();
+          data.forEach((event: any) => uniqueEventsMap.set(event.id, event));
+          setCalendarEvents(Array.from(uniqueEventsMap.values()));
+          
         } catch (err) {
           console.error("Calendar fetch error:", err);
         }
@@ -106,19 +106,20 @@ export default function Home() {
           const response = await fetch(`http://localhost:8080/api/classroom/tasks?email=${userProfile.email}`);
           if (!response.ok) throw new Error('Failed to fetch tasks');
           const data = await response.json();
-          console.log("📚 Classroom Tasks Loaded:", data);
           
-          // We combine the new Classroom tasks with any manually created ones you might have!
+          // THE BOUNCER: Destroy duplicate tasks 
           setTasks((prevTasks) => {
-            const manualTasks = prevTasks.filter(t => !t.id || !t.id.includes('coursework'));
-            return [...manualTasks, ...data];
+            const taskMap = new Map();
+            prevTasks.forEach(t => taskMap.set(t.id, t));
+            data.forEach((t: any) => taskMap.set(t.id, t));
+            return Array.from(taskMap.values());
           });
+
         } catch (err) {
           console.error("Task fetch error:", err);
         }
       };
 
-      // Run both fetches at the exact same time!
       fetchEvents();
       fetchTasks();
     }
@@ -222,6 +223,13 @@ export default function Home() {
     setIsProfileOpen(false);
   };
 
+  // --- PREVENT THE OVERLAP CRASH ---
+  // We filter the events so the Day view only gets today's events!
+  const todaysEvents = calendarEvents.filter(event => {
+    if (!event.start) return false;
+    return new Date(event.start).toDateString() === currentDate.toDateString();
+  });
+
   return (
     <main className="flex min-h-screen bg-slate-50 text-slate-900 overflow-hidden relative">
       <Sidebar tasks={tasks} onOpenAddTask={() => { setEditingTask(null); setIsModalOpen(true); }} onDeleteTask={handleDeleteTask} onEditTask={handleEditTask} onReorderTasks={handleReorderTasks} onToggleComplete={handleToggleComplete} isCrafting={isCrafting} onCraft={handleCraftMyDay} />
@@ -257,26 +265,17 @@ export default function Home() {
 
           <div className="flex justify-end relative items-center gap-4">
             {isCheckingAuth ? (
-              // Show a skeleton loader while parsing the token
               <div className="h-12 w-24 bg-slate-200 animate-pulse rounded-xl"></div>
             ) : !isAuthorized ? (
-              // NOT LOGGED IN: Show Log In / Sign Up
               <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => router.push('/login')} 
-                  className="text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors px-2"
-                >
+                <button onClick={() => router.push('/login')} className="text-sm font-bold text-slate-600 hover:text-indigo-600 transition-colors px-2">
                   Log In
                 </button>
-                <button 
-                  onClick={() => router.push('/login')} 
-                  className="text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl shadow-sm transition-all active:scale-95"
-                >
+                <button onClick={() => router.push('/login')} className="text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl shadow-sm transition-all active:scale-95">
                   Sign Up
                 </button>
               </div>
             ) : (
-              // LOGGED IN: Show Profile Icon
               <>
                 <button onClick={() => setIsProfileOpen(!isProfileOpen)} className={`h-12 w-12 border rounded-2xl shadow-sm flex items-center justify-center font-bold transition-all ${isProfileOpen ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-slate-200 text-indigo-600 hover:border-indigo-200'}`}>
                   {userProfile?.initials || 'JD'}
@@ -318,7 +317,7 @@ export default function Home() {
                 <CalendarGrid 
                   tasks={tasks} 
                   currentDate={currentDate} 
-                  googleEvents = {calendarEvents} // <-- Pass the real data here!
+                  googleEvents={todaysEvents} // <-- NO MORE OVERLAP CRASH!
                 />
               )}
               {currentView === 'Week' && <WeekView tasks={tasks} currentDate={currentDate} googleEvents={calendarEvents}/>}
@@ -328,11 +327,7 @@ export default function Home() {
         </div>
       </div>
       <AddTaskModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingTask(null); }} onSave={handleSaveTask} editingTask={editingTask} />
-      <IntegrationsModal 
-        isOpen={isIntegrationsOpen} 
-        onClose={() => setIsIntegrationsOpen(false)} 
-        primaryEmail={userProfile?.email}
-      />
+      <IntegrationsModal isOpen={isIntegrationsOpen} onClose={() => setIsIntegrationsOpen(false)} primaryEmail={userProfile?.email} />
     </main>
   );
 }
