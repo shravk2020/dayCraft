@@ -6,18 +6,18 @@ interface MonthViewProps {
   tasks: Task[];
   currentDate: Date;
   googleEvents?: any[];
+  setCurrentDate: (date: Date) => void;
+  setCurrentView: (view: 'Day' | 'Week' | 'Month') => void;
 }
 
-export default function MonthView({ tasks, currentDate, googleEvents = []}: MonthViewProps) {
+export default function MonthView({ tasks, currentDate, googleEvents, setCurrentDate, setCurrentView }: MonthViewProps) {  
   const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   
   // 1. DYNAMIC GRID MATH
-  // We figure out the current year, month, and what day the 1st lands on
   const year = currentDate.getFullYear();
-  const month = currentDate.getMonth(); // 0-11
-  const firstDay = new Date(year, month, 1).getDay(); // 0 (Sun) to 6 (Sat)
+  const month = currentDate.getMonth(); 
+  const firstDay = new Date(year, month, 1).getDay(); 
   
-  // We generate 35 actual Date objects for the grid
   const calendarBlocks = Array.from({ length: 35 }, (_, i) => {
     const dayOffset = i - firstDay + 1;
     return new Date(year, month, dayOffset);
@@ -46,7 +46,6 @@ export default function MonthView({ tasks, currentDate, googleEvents = []}: Mont
           const isToday = blockDate.toDateString() === new Date().toDateString();
           const dayNumber = blockDate.getDate();
 
-          // Filter Google Events matching this EXACT date
           const eventsForThisDay = googleEvents?.filter(event => {
             if (!event.start) return false;
             return new Date(event.start).toDateString() === blockDate.toDateString();
@@ -55,6 +54,11 @@ export default function MonthView({ tasks, currentDate, googleEvents = []}: Mont
           return (
             <div 
               key={index} 
+              // --- THE MAGIC CLICK HANDLER ---
+              onClick={() => {
+                setCurrentDate(blockDate); // Sets the master clock to the day you clicked!
+                setCurrentView('Day');     // Swaps the view back to the Day Grid!
+              }}
               className={`bg-white p-2 flex flex-col transition-colors hover:bg-slate-50 cursor-pointer overflow-hidden ${!isCurrentMonth ? 'opacity-40 bg-slate-50' : ''}`}
             >
               <div className="flex justify-end mb-1">
@@ -64,14 +68,12 @@ export default function MonthView({ tasks, currentDate, googleEvents = []}: Mont
               </div>
 
               <div className="flex flex-col gap-0.5 overflow-y-auto">
-                {/* Show Real Google Events (Blue Badges) */}
                 {eventsForThisDay.map((event) => (
                   <div key={event.id} className="text-[9px] font-bold px-1.5 py-0.5 rounded border mb-0.5 truncate bg-blue-50 border-blue-100 text-blue-700">
                     {new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {event.title}
                   </div>
                 ))}
 
-                {/* Show Prototype DayCraft Tasks (Indigo Badges on "Today") */}
                 {isToday && scheduledTasks.map((task) => (
                   <div key={task.id} className="text-[9px] font-bold px-1.5 py-0.5 rounded border mb-0.5 truncate bg-indigo-50 border-indigo-100 text-indigo-700">
                     {task.scheduledStart} - {task.title}

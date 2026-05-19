@@ -321,7 +321,7 @@ export default function Home() {
                 />
               )}
               {currentView === 'Week' && <WeekView tasks={tasks} currentDate={currentDate} googleEvents={calendarEvents}/>}
-              {currentView === 'Month' && <MonthView tasks={tasks} currentDate={currentDate} googleEvents={calendarEvents}/>}
+              {currentView === 'Month' && <MonthView tasks={tasks} currentDate={currentDate} googleEvents={calendarEvents} setCurrentDate={setCurrentDate} setCurrentView={setCurrentView} />}
             </>
           )}
         </div>
